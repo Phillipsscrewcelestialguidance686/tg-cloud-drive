@@ -136,11 +136,13 @@ export default function App() {
   const handleFileDrop = useCallback(
     async (droppedFiles: File[]) => {
       if (!client || !driveConfig || activeFolderId === null) return;
-      await Promise.all(
-        droppedFiles.map((file) =>
-          uploadFile(client, driveConfig, activeFolderId, file).catch(console.error)
-        )
-      );
+      for (const file of droppedFiles) {
+        try {
+          await uploadFile(client, driveConfig, activeFolderId, file);
+        } catch (err) {
+          console.error(`Failed to upload ${file.name}:`, err);
+        }
+      }
     },
     [client, driveConfig, activeFolderId, uploadFile]
   );

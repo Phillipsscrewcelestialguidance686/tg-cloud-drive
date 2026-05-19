@@ -72,7 +72,7 @@ export function UploadZone({ onDrop, disabled }: UploadZoneProps) {
       <input
         ref={fileInputRef}
         type="file"
-        multiple
+        multiple={true}
         onChange={handleFileSelect}
         className="hidden"
         disabled={disabled}
