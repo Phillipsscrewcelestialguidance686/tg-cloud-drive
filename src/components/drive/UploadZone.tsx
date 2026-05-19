@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 interface UploadZoneProps {
   onDrop: (files: File[]) => void;
@@ -7,6 +7,7 @@ interface UploadZoneProps {
 
 export function UploadZone({ onDrop, disabled }: UploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleDragOver = useCallback(
     (e: React.DragEvent) => {
@@ -49,27 +50,36 @@ export function UploadZone({ onDrop, disabled }: UploadZoneProps) {
     [onDrop]
   );
 
+  const handleZoneClick = useCallback(() => {
+    if (!disabled) {
+      fileInputRef.current?.click();
+    }
+  }, [disabled]);
+
   return (
     <div
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      onClick={handleZoneClick}
       className={`relative border-2 border-dashed rounded-2xl p-8 transition-all duration-300 text-center cursor-pointer group ${
         isDragging
           ? "border-brand-400 bg-brand-400/5 scale-[1.01]"
           : "border-surface-400 hover:border-surface-500 hover:bg-surface-200/50"
       } ${disabled ? "opacity-50 pointer-events-none" : ""}`}
     >
+      {/* Hidden file input — pointer-events-none so it never intercepts drag-and-drop */}
       <input
+        ref={fileInputRef}
         type="file"
         multiple
         onChange={handleFileSelect}
-        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        className="hidden"
         disabled={disabled}
       />
 
       <div
-        className={`flex flex-col items-center gap-3 transition-transform duration-300 ${
+        className={`flex flex-col items-center gap-3 pointer-events-none transition-transform duration-300 ${
           isDragging ? "scale-105" : ""
         }`}
       >

@@ -14,6 +14,9 @@ export function useFiles() {
     progress: number;
   } | null>(null);
   const fileCache = useRef<Map<number, DriveFile[]>>(new Map());
+  const uploadQueue = useRef<(() => Promise<void>)[]>([]);
+  const activeUploadCount = useRef<number>(0);
+  const MAX_CONCURRENT_UPLOADS = 2; // Process 2 file uploads concurrently
 
   /**
    * Load files from a given topic. Uses local cache if available.
@@ -39,6 +42,21 @@ export function useFiles() {
     []
   );
 
+  const processQueue = useCallback(async () => {
+    if (activeUploadCount.current >= MAX_CONCURRENT_UPLOADS || uploadQueue.current.length === 0) {
+      return;
+    }
+
+    activeUploadCount.current++;
+    const nextTask = uploadQueue.current.shift()!;
+    try {
+      await nextTask();
+    } finally {
+      activeUploadCount.current--;
+      processQueue();
+    }
+  }, []);
+
   /**
    * Upload a file to the specified topic.
    */
@@ -50,30 +68,62 @@ export function useFiles() {
       file: File
     ) => {
       const fileId = `${file.name}-${Date.now()}`;
-      try {
-        await uploadFileLib(client, config, topicId, file, (progress) => {
-          setUploads((prev) => {
-            const idx = prev.findIndex((u) => u.fileId === progress.fileId);
-            if (idx >= 0) {
-              const copy = [...prev];
-              copy[idx] = progress;
-              return copy;
-            }
-            return [...prev, progress];
-          });
-        });
-      } finally {
-        // Auto-clear completed/errored uploads after 2 seconds
-        setTimeout(() => {
-          setUploads((prev) => prev.filter((u) => u.status === "uploading" || u.status === "preparing"));
-        }, 2000);
-      }
 
-      // Refresh file list after upload completes
-      fileCache.current.delete(topicId);
-      await loadFiles(client, config, topicId, true);
+      // Immediately add a preparing progress entry so it shows up in the UI
+      setUploads((prev) => [
+        ...prev,
+        {
+          fileId,
+          fileName: file.name,
+          totalChunks: Math.ceil(file.size / (50 * 1024 * 1024)),
+          uploadedChunks: 0,
+          totalBytes: file.size,
+          uploadedBytes: 0,
+          status: "preparing",
+        },
+      ]);
+
+      return new Promise<void>((resolve, reject) => {
+        const task = async () => {
+          try {
+            await uploadFileLib(
+              client,
+              config,
+              topicId,
+              file,
+              (progress) => {
+                setUploads((prev) => {
+                  const idx = prev.findIndex((u) => u.fileId === progress.fileId);
+                  if (idx >= 0) {
+                    const copy = [...prev];
+                    copy[idx] = progress;
+                    return copy;
+                  }
+                  return [...prev, progress];
+                });
+              },
+              fileId
+            );
+            resolve();
+          } catch (err) {
+            reject(err);
+          } finally {
+            // Auto-clear completed/errored uploads after 2 seconds
+            setTimeout(() => {
+              setUploads((prev) => prev.filter((u) => u.status === "uploading" || u.status === "preparing"));
+            }, 2000);
+
+            // Refresh file list after upload completes
+            fileCache.current.delete(topicId);
+            await loadFiles(client, config, topicId, true);
+          }
+        };
+
+        uploadQueue.current.push(task);
+        processQueue();
+      });
     },
-    [loadFiles]
+    [loadFiles, processQueue]
   );
 
   /**

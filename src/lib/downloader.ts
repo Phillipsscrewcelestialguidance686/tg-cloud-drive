@@ -349,64 +349,141 @@ export async function downloadFile(
     // StreamSaver not available — fall back to blob download
   }
 
-  if (streamsaver) {
-    // Streaming download — avoids V8 heap pressure on huge files
-    const fileStream = streamsaver.createWriteStream(manifest.fileName, {
-      size: manifest.fileSize,
-    });
-    const writer = fileStream.getWriter();
-    const chunkProgress = new Array(manifest.chunks.length).fill(0);
-    const pendingWrites = new Map<number, Uint8Array>();
-    let nextWriteIndex = 0;
-    let writeLock = Promise.resolve();
+  const chunkProgress = new Float64Array(manifest.chunks.length);
+  const emitProgress = () => {
+    const totalDownloaded = chunkProgress.reduce((a, b) => a + b, 0);
+    onProgress?.(totalDownloaded, manifest.fileSize);
+  };
+  const progressInterval = setInterval(emitProgress, 100);
 
-    const tasks = manifest.chunks.map((msgId, index) => async () => {
-      const messages = await client.getMessages(
-        new Api.InputPeerChannel({ channelId: bigInt(config.chatId), accessHash: bigInt(config.accessHash) }),
-        { ids: [msgId] }
-      );
+  try {
+    emitProgress();
 
-      let attempts = 0;
-      while (attempts < 3) {
-        try {
-          if (messages.length > 0 && messages[0]) {
-            const buffer = (await client.downloadMedia(messages[0], {
-              workers,
-              progressCallback: (dl: any, total: any) => {
-                chunkProgress[index] = Number(dl);
-                const totalDownloaded = chunkProgress.reduce((a, b) => a + b, 0);
-                onProgress?.(totalDownloaded, manifest.fileSize);
-              },
-            } as any)) as Buffer | undefined;
+    if (streamsaver) {
+      // Streaming download — avoids V8 heap pressure on huge files
+      const fileStream = streamsaver.createWriteStream(manifest.fileName, {
+        size: manifest.fileSize,
+      });
+      const writer = fileStream.getWriter();
+      const pendingWrites = new Map<number, Uint8Array>();
+      let nextWriteIndex = 0;
+      let writeLock = Promise.resolve();
 
-            if (buffer && buffer.length > 0) {
-              const arr = new Uint8Array(buffer);
-              writeLock = writeLock.then(async () => {
-                pendingWrites.set(index, arr);
-                while (pendingWrites.has(nextWriteIndex)) {
-                  await writer.write(pendingWrites.get(nextWriteIndex)!);
-                  pendingWrites.delete(nextWriteIndex);
-                  nextWriteIndex++;
-                }
-              });
-              await writeLock;
-              return;
+      const tasks = manifest.chunks.map((msgId, index) => async () => {
+        const messages = await client.getMessages(
+          new Api.InputPeerChannel({ channelId: bigInt(config.chatId), accessHash: bigInt(config.accessHash) }),
+          { ids: [msgId] }
+        );
+
+        let attempts = 0;
+        while (attempts < 3) {
+          try {
+            if (messages.length > 0 && messages[0]) {
+              const buffer = (await client.downloadMedia(messages[0], {
+                workers,
+                progressCallback: (dl: any, total: any) => {
+                  chunkProgress[index] = Number(dl);
+                },
+              } as any)) as Buffer | undefined;
+
+              if (buffer && buffer.length > 0) {
+                chunkProgress[index] = buffer.length;
+                const arr = new Uint8Array(buffer);
+                writeLock = writeLock.then(async () => {
+                  pendingWrites.set(index, arr);
+                  while (pendingWrites.has(nextWriteIndex)) {
+                    await writer.write(pendingWrites.get(nextWriteIndex)!);
+                    pendingWrites.delete(nextWriteIndex);
+                    nextWriteIndex++;
+                  }
+                });
+                await writeLock;
+                return;
+              }
             }
+          } catch (e) {
+            console.warn(`Chunk ${index} failed, retrying...`, e);
           }
-        } catch (e) {
-          console.warn(`Chunk ${index} failed, retrying...`, e);
+          attempts++;
+          await new Promise((r) => setTimeout(r, 1000 * attempts));
         }
-        attempts++;
-        await new Promise((r) => setTimeout(r, 1000 * attempts));
-      }
-      throw new Error(`Failed to download chunk ${index}`);
-    });
+        throw new Error(`Failed to download chunk ${index}`);
+      });
 
-    await runWithConcurrency(tasks, segments);
-    await writer.close();
-  } else {
-    // Fallback: collect all buffers and trigger a download blob
-    const chunkProgress = new Array(manifest.chunks.length).fill(0);
+      await runWithConcurrency(tasks, segments);
+      await writer.close();
+    } else {
+      // Fallback: collect all buffers and trigger a download blob
+      const tasks = manifest.chunks.map((msgId, index) => async () => {
+        const messages = await client.getMessages(
+          new Api.InputPeerChannel({ channelId: bigInt(config.chatId), accessHash: bigInt(config.accessHash) }),
+          { ids: [msgId] }
+        );
+
+        let attempts = 0;
+        while (attempts < 3) {
+          try {
+            if (messages.length > 0 && messages[0]) {
+              const buffer = (await client.downloadMedia(messages[0], {
+                workers,
+                progressCallback: (dl: any, total: any) => {
+                  chunkProgress[index] = Number(dl);
+                },
+              } as any)) as Buffer | undefined;
+
+              if (buffer && buffer.length > 0) {
+                chunkProgress[index] = buffer.length;
+                return { index, buffer: new Uint8Array(buffer) };
+              }
+            }
+          } catch (e) {
+            console.warn(`Chunk ${index} failed, retrying...`, e);
+          }
+          attempts++;
+          await new Promise((r) => setTimeout(r, 1000 * attempts));
+        }
+        throw new Error(`Failed to download chunk ${index}`);
+      });
+
+      const results = await runWithConcurrency(tasks, segments);
+      results.sort((a, b) => a.index - b.index);
+
+      const blob = new Blob(results.map((r) => r.buffer));
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = manifest.fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  } finally {
+    clearInterval(progressInterval);
+    emitProgress(); // final emit
+  }
+}
+
+/**
+ * Download a file entirely into memory and return its Blob.
+ * Useful for in-browser previews of images, audio, and video.
+ */
+export async function downloadFileToMemory(
+  client: TelegramClient,
+  config: DriveConfig,
+  manifest: ChunkManifest,
+  onProgress?: (downloaded: number, total: number) => void
+): Promise<Blob> {
+  const { segments, workers } = getDynamicConcurrency();
+  const chunkProgress = new Float64Array(manifest.chunks.length);
+  const emitProgress = () => {
+    const totalDownloaded = chunkProgress.reduce((a, b) => a + b, 0);
+    onProgress?.(totalDownloaded, manifest.fileSize);
+  };
+  const progressInterval = setInterval(emitProgress, 100);
+
+  try {
+    emitProgress();
 
     const tasks = manifest.chunks.map((msgId, index) => async () => {
       const messages = await client.getMessages(
@@ -422,12 +499,11 @@ export async function downloadFile(
               workers,
               progressCallback: (dl: any, total: any) => {
                 chunkProgress[index] = Number(dl);
-                const totalDownloaded = chunkProgress.reduce((a, b) => a + b, 0);
-                onProgress?.(totalDownloaded, manifest.fileSize);
               },
             } as any)) as Buffer | undefined;
 
             if (buffer && buffer.length > 0) {
+              chunkProgress[index] = buffer.length;
               return { index, buffer: new Uint8Array(buffer) };
             }
           }
@@ -443,65 +519,9 @@ export async function downloadFile(
     const results = await runWithConcurrency(tasks, segments);
     results.sort((a, b) => a.index - b.index);
 
-    const blob = new Blob(results.map((r) => r.buffer));
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = manifest.fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    return new Blob(results.map((r) => r.buffer));
+  } finally {
+    clearInterval(progressInterval);
+    emitProgress(); // final emit
   }
-}
-
-/**
- * Download a file entirely into memory and return its Blob.
- * Useful for in-browser previews of images, audio, and video.
- */
-export async function downloadFileToMemory(
-  client: TelegramClient,
-  config: DriveConfig,
-  manifest: ChunkManifest,
-  onProgress?: (downloaded: number, total: number) => void
-): Promise<Blob> {
-  const { segments, workers } = getDynamicConcurrency();
-  const chunkProgress = new Array(manifest.chunks.length).fill(0);
-
-  const tasks = manifest.chunks.map((msgId, index) => async () => {
-    const messages = await client.getMessages(
-      new Api.InputPeerChannel({ channelId: bigInt(config.chatId), accessHash: bigInt(config.accessHash) }),
-      { ids: [msgId] }
-    );
-
-    let attempts = 0;
-    while (attempts < 3) {
-      try {
-        if (messages.length > 0 && messages[0]) {
-          const buffer = (await client.downloadMedia(messages[0], {
-            workers,
-            progressCallback: (dl: any, total: any) => {
-              chunkProgress[index] = Number(dl);
-              const totalDownloaded = chunkProgress.reduce((a, b) => a + b, 0);
-              onProgress?.(totalDownloaded, manifest.fileSize);
-            },
-          } as any)) as Buffer | undefined;
-
-          if (buffer && buffer.length > 0) {
-            return { index, buffer: new Uint8Array(buffer) };
-          }
-        }
-      } catch (e) {
-        console.warn(`Chunk ${index} failed, retrying...`, e);
-      }
-      attempts++;
-      await new Promise((r) => setTimeout(r, 1000 * attempts));
-    }
-    throw new Error(`Failed to download chunk ${index}`);
-  });
-
-  const results = await runWithConcurrency(tasks, segments);
-  results.sort((a, b) => a.index - b.index);
-
-  return new Blob(results.map((r) => r.buffer));
 }

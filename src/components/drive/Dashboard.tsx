@@ -229,7 +229,6 @@ export function Dashboard({
             <div className="space-y-6">
               <UploadZone
                 onDrop={onFileDrop}
-                disabled={activeUploads.length > 0}
               />
 
               {/* Upload progress indicators */}

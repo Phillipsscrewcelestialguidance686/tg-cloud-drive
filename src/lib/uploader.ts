@@ -84,96 +84,101 @@ export async function uploadFile(
   config: DriveConfig,
   topicId: number,
   file: File,
-  onProgress?: (p: UploadProgress) => void
+  onProgress?: (p: UploadProgress) => void,
+  fileId?: string
 ): Promise<void> {
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-  const fileId = `${file.name}-${Date.now()}`;
+  const finalFileId = fileId || `${file.name}-${Date.now()}`;
 
   const peer = new Api.InputPeerChannel({ channelId: bigInt(config.chatId), accessHash: bigInt(config.accessHash) });
 
-  const report = (
-    status: UploadProgress["status"],
-    uploaded: number,
-    error?: string
-  ) => {
+  // Shared per-chunk byte progress tracker (written by callbacks, read by poller)
+  const chunkProgress = new Float64Array(totalChunks);
+  let currentStatus: UploadProgress["status"] = "preparing";
+  let currentError: string | undefined;
+
+  const emitProgress = () => {
+    const totalUploadedBytes = chunkProgress.reduce((a, b) => a + b, 0);
     onProgress?.({
-      fileId,
+      fileId: finalFileId,
       fileName: file.name,
       totalChunks,
-      uploadedChunks: uploaded,
+      uploadedChunks: Math.floor(totalUploadedBytes / CHUNK_SIZE),
       totalBytes: file.size,
-      uploadedBytes: Math.min(uploaded * CHUNK_SIZE, file.size),
-      status,
-      error,
+      uploadedBytes: Math.min(totalUploadedBytes, file.size),
+      status: currentStatus,
+      error: currentError,
     });
   };
 
-  report("preparing", 0);
+  // Start a 100ms polling interval so the UI always gets smooth updates
+  // even when GramJS batches its internal progress callbacks
+  const progressInterval = setInterval(emitProgress, 100);
 
-  const chunkProgress = new Array(totalChunks).fill(0);
+  try {
+    emitProgress();
 
-  const tasks = Array.from({ length: totalChunks }).map((_, i) => async () => {
-    const start = i * CHUNK_SIZE;
-    const end = Math.min(start + CHUNK_SIZE, file.size);
-    const blob = file.slice(start, end);
+    const tasks = Array.from({ length: totalChunks }).map((_, i) => async () => {
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, file.size);
+      const blob = file.slice(start, end);
 
-    let attempts = 0;
-    while (true) {
-      try {
-        if (attempts === 0) report("uploading", i);
-        const msgId = await uploadChunk(
-          client,
-          peer,
-          topicId,
-          blob,
-          i,
-          file.name,
-          (progress) => {
-            chunkProgress[i] = progress * blob.size;
-            const totalUploadedBytes = chunkProgress.reduce((a, b) => a + b, 0);
-            onProgress?.({
-              fileId,
-              fileName: file.name,
-              totalChunks,
-              uploadedChunks: Math.floor(totalUploadedBytes / CHUNK_SIZE),
-              totalBytes: file.size,
-              uploadedBytes: Math.min(totalUploadedBytes, file.size),
-              status: "uploading",
-            });
+      let attempts = 0;
+      while (true) {
+        try {
+          currentStatus = "uploading";
+          const msgId = await uploadChunk(
+            client,
+            peer,
+            topicId,
+            blob,
+            i,
+            file.name,
+            (progress) => {
+              chunkProgress[i] = progress * blob.size;
+            }
+          );
+          // Mark chunk fully done
+          chunkProgress[i] = blob.size;
+          return { index: i, msgId };
+        } catch (err: any) {
+          if (err?.errorMessage?.startsWith("FLOOD_WAIT_")) {
+            const wait = parseInt(err.errorMessage.split("_").pop()!, 10) || 30;
+            console.warn(`FloodWait: sleeping ${wait}s then retrying chunk ${i}`);
+            await new Promise((r) => setTimeout(r, wait * 1000));
+            attempts++;
+            continue;
           }
-        );
-        return { index: i, msgId };
-      } catch (err: any) {
-        if (err?.errorMessage?.startsWith("FLOOD_WAIT_")) {
-          const wait = parseInt(err.errorMessage.split("_").pop()!, 10) || 30;
-          console.warn(`FloodWait: sleeping ${wait}s then retrying chunk ${i}`);
-          await new Promise((r) => setTimeout(r, wait * 1000));
-          attempts++;
-          continue;
+          currentStatus = "error";
+          currentError = err.message;
+          emitProgress();
+          throw err;
         }
-        report("error", i, err.message);
-        throw err;
       }
-    }
-  });
+    });
 
-  const results = await runWithConcurrency(tasks, 4); // 4 parallel 50MB segment uploads to perfectly saturate without socket saturation
-  results.sort((a, b) => a.index - b.index);
-  const chunkMsgIds = results.map((r) => r.msgId);
+    const results = await runWithConcurrency(tasks, 4);
+    results.sort((a, b) => a.index - b.index);
+    const chunkMsgIds = results.map((r) => r.msgId);
 
-  // Send the manifest message
-  report("finalizing", totalChunks);
-  const manifestJson = buildManifest(file.name, file.size, chunkMsgIds);
+    // Send the manifest message
+    currentStatus = "finalizing";
+    emitProgress();
+    const manifestJson = buildManifest(file.name, file.size, chunkMsgIds);
 
-  // @ts-ignore — replyTo with InputReplyToMessage works at runtime in GramJS
-  await client.invoke(
-    new Api.messages.SendMessage({
-      peer,
-      replyTo: new Api.InputReplyToMessage({ replyToMsgId: topicId }),
-      message: manifestJson,
-      randomId: bigInt(Math.floor(Math.random() * 0xffffffffffff)),
-    })
-  );
+    // @ts-ignore — replyTo with InputReplyToMessage works at runtime in GramJS
+    await client.invoke(
+      new Api.messages.SendMessage({
+        peer,
+        replyTo: new Api.InputReplyToMessage({ replyToMsgId: topicId }),
+        message: manifestJson,
+        randomId: bigInt(Math.floor(Math.random() * 0xffffffffffff)),
+      })
+    );
 
-  report("done", totalChunks);
+    currentStatus = "done";
+    emitProgress();
+  } finally {
+    clearInterval(progressInterval);
+  }
 }
