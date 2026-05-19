@@ -234,16 +234,27 @@ export function useAuth() {
       setState((s) => ({ ...s, loading: true, error: null }));
       if (clientRef.current) await clientRef.current.disconnect();
 
-      const client = createClientFromSession(account.session);
-      setClient(client);
-      clientRef.current = client;
-      await client.connect();
-      const profile = await extractProfile(client);
-      persistSession();
-      await rememberAccount(profile, getCurrentSessionString());
-      setUserProfile(profile);
-      setConnected(true);
-      setState((s) => ({ ...s, step: "done", loading: false }));
+      try {
+        if (!account.session) {
+          throw new Error("No local session found on this device. Please log in.");
+        }
+        const client = createClientFromSession(account.session);
+        setClient(client);
+        clientRef.current = client;
+        await client.connect();
+        const profile = await extractProfile(client);
+        persistSession();
+        await rememberAccount(profile, getCurrentSessionString());
+        setUserProfile(profile);
+        setConnected(true);
+        setState((s) => ({ ...s, step: "done", loading: false }));
+      } catch (err: any) {
+        console.warn("Failed to switch account:", err);
+        // Force authentication flow for this account
+        setConnected(false);
+        setUserProfile(null);
+        setState({ step: "phone", phone: "", loading: false, error: err.message });
+      }
     },
     [activeAccountId, extractProfile, rememberAccount]
   );

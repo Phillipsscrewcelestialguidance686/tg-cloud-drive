@@ -18,7 +18,8 @@ function accountPayload(accounts: SavedAccount[]) {
     updatedAt: Date.now(),
     accounts: accounts.map((account) => ({
       userid: account.userId,
-      string: account.session,
+      // Strictly set to empty string to prevent uploading session keys to cloud
+      string: "",
       username: account.username,
       "id name": account.idName,
       api_hash: account.apiHash || API_HASH,
@@ -41,7 +42,8 @@ function normalizeAccounts(data: any): SavedAccount[] {
   return rawAccounts
     .map((account) => ({
       userId: String(account.userid ?? account.userId ?? account.id ?? ""),
-      session: String(account.string ?? account.session ?? ""),
+      // Strictly prevent restoring session strings from database to keep sessions local
+      session: "",
       username: String(account.username ?? ""),
       idName: String(account["id name"] ?? account.idName ?? account.name ?? ""),
       apiHash: String(account.api_hash ?? account.apiHash ?? API_HASH),
@@ -49,7 +51,7 @@ function normalizeAccounts(data: any): SavedAccount[] {
       avatarUrl: null,
       updatedAt: Number(account.updatedAt ?? Date.now()),
     }))
-    .filter((account) => account.userId && account.session);
+    .filter((account) => account.userId);
 }
 
 export async function loadCloudAccounts(): Promise<SavedAccount[]> {
