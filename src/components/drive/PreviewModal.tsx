@@ -23,6 +23,17 @@ export function PreviewModal({ file, url, onClose }: PreviewModalProps) {
   const [textContent, setTextContent] = useState<string | null>(null);
   const [loadingText, setLoadingText] = useState(false);
 
+  // Excel / Spreadsheet preview states
+  const [sheetData, setSheetData] = useState<any[][] | null>(null);
+  const [sheetNames, setSheetNames] = useState<string[]>([]);
+  const [activeSheetIndex, setActiveSheetIndex] = useState(0);
+  const [loadingSheet, setLoadingSheet] = useState(false);
+  const [workbookRef, setWorkbookRef] = useState<any>(null);
+
+  // Word docx preview states
+  const [loadingDocx, setLoadingDocx] = useState(false);
+  const docxContainerRef = useRef<HTMLDivElement | null>(null);
+
   const handleClose = () => {
     if (audioRef.current) {
       audioRef.current.pause();
@@ -44,10 +55,12 @@ export function PreviewModal({ file, url, onClose }: PreviewModalProps) {
     mimeType.startsWith("audio/") ||
     ["mp3", "wav", "ogg", "m4a", "flac"].includes(ext || "");
   const isText = 
-    ["txt", "md", "json", "js", "ts", "py", "rs", "go", "html", "css", "xml", "csv"].includes(ext || "");
+    ["txt", "md", "json", "js", "ts", "py", "rs", "go", "html", "css", "xml"].includes(ext || "");
   const isPdf =
     mimeType === "application/pdf" ||
     (ext || "") === "pdf";
+  const isDocx = (ext || "") === "docx";
+  const isSheet = ["xlsx", "xls", "csv"].includes(ext || "");
 
   // Escape key close listener
   useEffect(() => {
@@ -76,6 +89,90 @@ export function PreviewModal({ file, url, onClose }: PreviewModalProps) {
         });
     }
   }, [isText, url]);
+
+  // Dynamic script helper
+  function loadScript(src: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (document.querySelector(`script[src="${src}"]`)) {
+        resolve();
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = src;
+      script.onload = () => resolve();
+      script.onerror = (e) => reject(e);
+      document.head.appendChild(script);
+    });
+  }
+
+  // Excel / CSV spreadsheet loader
+  useEffect(() => {
+    if (isSheet && url) {
+      setLoadingSheet(true);
+      loadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js")
+        .then(() => fetch(url))
+        .then((r) => r.arrayBuffer())
+        .then((buffer) => {
+          const XLSX = (window as any).XLSX;
+          const workbook = XLSX.read(new Uint8Array(buffer), { type: "array" });
+          setWorkbookRef(workbook);
+          setSheetNames(workbook.SheetNames);
+          
+          // Render first sheet by default
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+          setSheetData(jsonData as any[][]);
+          setLoadingSheet(false);
+        })
+        .catch((e) => {
+          console.error("Spreadsheet load/parse error:", e);
+          setLoadingSheet(false);
+        });
+    }
+  }, [isSheet, url]);
+
+  const handleSheetSwitch = (index: number) => {
+    if (!workbookRef) return;
+    setActiveSheetIndex(index);
+    const XLSX = (window as any).XLSX;
+    const sheetName = workbookRef.SheetNames[index];
+    const worksheet = workbookRef.Sheets[sheetName];
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+    setSheetData(jsonData as any[][]);
+  };
+
+  // Word (.docx) loader
+  useEffect(() => {
+    if (isDocx && url && docxContainerRef.current) {
+      setLoadingDocx(true);
+      loadScript("https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js")
+        .then(() => loadScript("https://cdn.jsdelivr.net/npm/docx-preview@0.1.15/dist/docx-preview.min.js"))
+        .then(() => fetch(url))
+        .then((r) => r.blob())
+        .then((blob) => {
+          const docx = (window as any).docx;
+          if (docxContainerRef.current) {
+            docxContainerRef.current.innerHTML = ""; // Clear
+            docx.renderAsync(blob, docxContainerRef.current, null, {
+              className: "docx-preview-body",
+              inWrapper: false,
+              ignoreWidth: true,
+              ignoreHeight: true
+            })
+              .then(() => setLoadingDocx(false))
+              .catch((err: any) => {
+                console.error("Docx renderAsync failed:", err);
+                setLoadingDocx(false);
+              });
+          }
+        })
+        .catch((e) => {
+          console.error("Docx load/render error:", e);
+          setLoadingDocx(false);
+        });
+    }
+  }, [isDocx, url, docxContainerRef.current]);
 
   // Audio Playback Controls
   const toggleAudioPlay = () => {
@@ -298,7 +395,102 @@ export function PreviewModal({ file, url, onClose }: PreviewModalProps) {
                 </div>
               )}
 
-              {!isImage && !isVideo && !isAudio && !isText && !isPdf && (
+              {isSheet && (
+                <div className="w-full max-w-5xl h-[calc(100dvh-10rem)] p-4 bg-surface-900 border border-surface-850 rounded-xl overflow-hidden flex flex-col shadow-2xl relative text-left">
+                  {loadingSheet ? (
+                    <div className="flex-1 flex items-center justify-center gap-3">
+                      <svg className="animate-spin h-5 w-5 text-accent-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <circle cx="12" cy="12" r="10" strokeWidth={4} className="opacity-25" />
+                        <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" className="opacity-75" />
+                      </svg>
+                      <span className="text-surface-400">Parsing spreadsheet data...</span>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Multiple workbook sheet tabs */}
+                      {sheetNames.length > 1 && (
+                        <div className="flex items-center gap-2 mb-3 overflow-x-auto border-b border-surface-800 pb-2">
+                          {sheetNames.map((name, index) => (
+                            <button
+                              key={name}
+                              onClick={() => handleSheetSwitch(index)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                                activeSheetIndex === index
+                                  ? "bg-accent-500 text-white shadow-md shadow-accent-500/10"
+                                  : "bg-surface-800 text-surface-400 hover:text-white"
+                              }`}
+                            >
+                              {name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      
+                      {/* Glassmorphic Spreadsheet Table Grid */}
+                      <div className="flex-1 overflow-auto rounded-lg border border-surface-800/80 bg-surface-950/60 scrollbar-thin">
+                        {sheetData && sheetData.length > 0 ? (
+                          <table className="w-full border-collapse text-left text-xs text-surface-200">
+                            <thead>
+                              <tr className="bg-surface-900 border-b border-surface-850 divide-x divide-surface-850 select-none">
+                                <th className="px-3 py-2 text-center text-surface-500 font-semibold w-10">#</th>
+                                {sheetData[0].map((_, colIdx) => (
+                                  <th key={colIdx} className="px-3 py-2 text-surface-400 font-medium min-w-[120px]">
+                                    {String.fromCharCode(65 + (colIdx % 26)) + (colIdx >= 26 ? Math.floor(colIdx / 26) : "")}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-surface-850/30">
+                              {sheetData.map((row, rowIdx) => (
+                                <tr key={rowIdx} className="hover:bg-surface-900/30 divide-x divide-surface-850/20">
+                                  <td className="px-3 py-1.5 text-center bg-surface-900/40 text-surface-500 select-none font-semibold w-10">{rowIdx + 1}</td>
+                                  {row.map((cell, colIdx) => (
+                                    <td key={colIdx} className="px-3 py-1.5 truncate max-w-[200px]" title={String(cell)}>
+                                      {String(cell ?? "")}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        ) : (
+                          <div className="flex items-center justify-center p-20 text-surface-400">
+                            No spreadsheet data found in this sheet
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {isDocx && (
+                <div className="w-full max-w-4xl h-[calc(100dvh-10rem)] p-4 bg-surface-900 border border-surface-850 rounded-xl flex flex-col shadow-2xl relative">
+                  {loadingDocx && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-surface-900/80 z-10 gap-3">
+                      <svg className="animate-spin h-5 w-5 text-accent-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <circle cx="12" cy="12" r="10" strokeWidth={4} className="opacity-25" />
+                        <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" className="opacity-75" />
+                      </svg>
+                      <span className="text-surface-400">Rendering document pages...</span>
+                    </div>
+                  )}
+                  
+                  {/* Styled docx renderer paper window */}
+                  <div className="flex-1 overflow-auto rounded-lg bg-[#ffffff] border border-surface-850 p-6 md:p-12 text-left select-text scrollbar-thin">
+                    <style dangerouslySetInnerHTML={{__html: `
+                      .docx-preview-body { background: transparent !important; color: #333333 !important; font-family: 'Inter', sans-serif !important; }
+                      .docx-preview-body p { margin-bottom: 0.75rem !important; line-height: 1.6 !important; }
+                      .docx-preview-body h1, .docx-preview-body h2, .docx-preview-body h3 { color: #111111 !important; font-weight: 700 !important; margin-top: 1.5rem !important; margin-bottom: 0.75rem !important; }
+                      .docx-preview-body table { width: 100% !important; border-collapse: collapse !important; margin: 1rem 0 !important; }
+                      .docx-preview-body td, .docx-preview-body th { border: 1px solid #ddd !important; padding: 8px !important; }
+                    `}} />
+                    <div ref={docxContainerRef} className="w-full h-full" />
+                  </div>
+                </div>
+              )}
+
+              {!isImage && !isVideo && !isAudio && !isText && !isPdf && !isSheet && !isDocx && (
                 <div className="text-center">
                   <div className="w-16 h-16 mx-auto rounded-2xl bg-surface-800 flex items-center justify-center mb-4">
                     <svg className="w-8 h-8 text-surface-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
